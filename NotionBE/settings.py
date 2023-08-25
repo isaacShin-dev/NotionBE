@@ -25,7 +25,9 @@ SECRET_KEY = 'django-insecure-y1r86c%ozxsiwphsf&g2c!ktezhd!5-sbr%24lzqvcckall)o!
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    '118.67.132.139:8000'
+]
 
 CORS_ALLOWED_ORIGINS = [
     "https://eclipseaddict.com",
