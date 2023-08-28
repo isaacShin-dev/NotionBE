@@ -49,7 +49,7 @@ def create_article(result):
         article.categories.add(category)
 
 
-@api_view(['POST'])
+@api_view(['GET'])
 def data_list_fetch_to_save(request):
     body = {
         "filter": {
@@ -68,14 +68,15 @@ def data_list_fetch_to_save(request):
     body_json = json.dumps(body)
     response = requests.post(f'{base_url}databases/{database_id}/query', headers=headers, data=body_json)
     res_to_json = json.loads(response.text)
-
+    new_data_cnt = 0
     for result in res_to_json.get('results'):
         try:
             article = NotionArticle.objects.get(id=result.get('id'))
         except NotionArticle.DoesNotExist:
             create_article(result)
+            new_data_cnt += 1
 
-    return JsonResponse(data={'message': 'successfully saved'}, status=status.HTTP_200_OK)
+    return JsonResponse(data={'message': 'successfully saved', 'count': new_data_cnt}, status=status.HTTP_200_OK)
 
 
 class listPagination(PageNumberPagination):
@@ -97,53 +98,69 @@ def fetch_published_list(request):
 
 @api_view(['GET'])
 def fetch_article(request, article_id):
+    # chech for update
+    update_check_response = requests.get(f'{base_url}pages/{article_id}', headers=headers)
+    update_check_res_to_json = json.loads(update_check_response.text)
+    updated_time = datetime.strptime(update_check_res_to_json.get('last_edited_time'), '%Y-%m-%dT%H:%M:%S.%fZ')
+
+    article = NotionArticle.objects.get(id=article_id)
+    if article.updated_time != updated_time:
+        article.updated_time = updated_time
+        article.cover = update_check_res_to_json.get('cover').get('external').get('url')
+        article.title = update_check_res_to_json.get('properties').get('이름').get('title')[0].get('plain_text')
+        article.categories.clear()
+        for i in range(len(update_check_res_to_json.get('properties').get('주제').get('multi_select'))):
+            category, created = Category.objects.get_or_create(
+                category=update_check_res_to_json.get('properties').get('주제').get('multi_select')[i].get('name'))
+            article.categories.add(category)
+        article.save()
+
+
     response = requests.get(f'{base_url}blocks/{article_id}/children', headers=headers)
     res_to_json = json.loads(response.text)
     results = res_to_json.get('results')
 
     content_body = ""
-    content_markdown = ""
     for result in results:
         if result.get('type') == 'heading_1':
             h1_plain_text = result.get('heading_1').get('rich_text')[0].get('plain_text')
-            # content_markdown += f'# {h1_plain_text} \n'
             content_body += f'<h1 class="main--header">{h1_plain_text}</h1>'
 
         elif result.get('type') == 'heading_2':
             h2_plain_text = result.get('heading_2').get('rich_text')[0].get('plain_text')
             content_body += f'<h2>{h2_plain_text}</h2>'
-            # content_markdown += f'## {h2_plain_text} \n'
 
         elif result.get('type') == 'heading_3':
             h3_plain_text = result.get('heading_3').get('rich_text')[0].get('plain_text')
             content_body += f'<h3>{h3_plain_text}</h3>'
-            # content_markdown += f'### {h3_plain_text} \n\n'
 
         elif result.get('type') == 'paragraph':
-            # for text in result.get('paragraph').get('rich_text'):
-            #     if text.get('annotations').get('code'):
-            #         content_markdown += f'`{text.get("plain_text")}`'
-            #     else:
-            #         content_markdown += text.get('plain_text')
-            # content_markdown += f' \n'
-            content_body += f'<p>'
-            for text in result.get('paragraph').get('rich_text'):
-                content_body += text.get('plain_text')
-            content_body += f'</p>'
+            if not result.get('paragraph').get('rich_text'):
+                content_body += f'<br/>'
+            else:
+                content_body += f'<p>'
+                for text in result.get('paragraph').get('rich_text'):
+                    tmp = text.get('plain_text')
+                    if text.get('annotations').get('code'):
+                        tmp = f'<code class="inline--code--block">{tmp}</code>'
+                    if text.get('annotations').get('bold'):
+                        tmp = f'<strong>{tmp}</strong>'
+                    if text.get('annotations').get('italic'):
+                        tmp = f'<em>{tmp}</em>'
+                    if text.get('annotations').get('strikethrough'):
+                        tmp = f'<del>{tmp}</del>'
+                    if text.get('annotations').get('underline'):
+                        tmp = f'<u>{tmp}</u>'
+                    if text.get('annotations').get('color'):
+                        tmp = f'<span style="color:{text.get("annotations").get("color")}">{tmp}</span>'
+                    content_body += tmp
+
+                content_body += f'</p>'
 
         elif result.get('type') == 'divider':
             content_body += f'<hr>'
-            # content_markdown += f'--- \n'
 
         elif result.get('type') == 'callout':
-            # if result.get('callout').get('icon'):
-            #     content_markdown += f'{result.get("callout").get("icon").get("emoji")}'
-            # for text in result.get('callout').get('rich_text'):
-            #     if text.get('annotations').get('code'):
-            #         content_markdown += f'`{text.get("plain_text")}`'
-            #     else:
-            #         content_markdown += text.get('plain_text')
-            # content_markdown += f' \n'
             content_body += f'<div class="callout">'
             if result.get('callout').get('icon'):
                 content_body += f'{result.get("callout").get("icon").get("emoji")}'
@@ -159,33 +176,71 @@ def fetch_article(request, article_id):
             code_type = result.get('code').get('language')
             if code_type == 'python':
                 code_type = 'py'
-            # content_markdown += f'``` {code_type} {code_text} ``` \n'
             content_body += f'<pre class="prettyprint lang-{code_type}">{code_text}</pre>'
 
         elif result.get('type') == 'quote':
             quatation_text = result.get('quote').get('rich_text')[0].get('plain_text')
             content_body += f'<blockquote>{quatation_text}</blockquote>'
-            # content_markdown += f'> {result.get("quote").get("rich_text")[0].get("plain_text")} \n'
 
         elif result.get('type') == 'bulleted_list_item':
             content_body += f'<ul><li>'
             for text in result.get('bulleted_list_item').get('rich_text'):
                 if text.get('annotations').get('code'):
-                    # content_markdown += f'`{text.get("plain_text")}` \n'
                     content_body += f'<code class="inline--code--block">{text.get("plain_text")}</code>'
                 else:
-                    content_markdown += text.get('plain_text') + ' \n'
                     content_body += text.get('plain_text')
-            #         content_body += text.get('plain_text')
             content_body += f'</li></ul>'
+        elif result.get('type') == 'image':
+            image_url = ""
+            # check if test have external key or file key
+            if result.get('image').get('external'):
+                print('external')
+                image_url = result.get('image').get('external').get('url')
+            elif result.get('image').get('file'):
+                print('file')
+                image_url = result.get('image').get('file').get('url')
+            content_body += f'<div style="text-align: center;"><img class="body--image" src="{image_url}" alt="image"></div>'
 
 
 
 
+    article.views += 1
+    article.save()
 
-    print(content_body)
+    category_list = NotionArticle.objects.get(id=article_id).categories.all()
+
+
+
+    print([category.category for category in category_list])
     result = {
+        'title': article.title,
+        'categories': [category.category for category in category_list],
+        'cover': article.cover,
+        'created_at': article.created_time,
+        'views': article.views,
         'content': content_body
     }
 
     return JsonResponse(data=result, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+def fetch_by_category(request, category):
+    articles = NotionArticle.objects.filter(categories__category=category).order_by('-created_time')
+
+    paginator = listPagination()
+    paginated_list = paginator.paginate_queryset(articles, request)
+    serializer = NotionArticleSerializer(paginated_list, many=True)
+
+    return paginator.get_paginated_response(serializer.data)
+
+
+@api_view(['GET'])
+def fetch_by_views(request):
+    articles = NotionArticle.objects.order_by('-views')[0:5]
+
+    paginator = listPagination()
+    paginated_list = paginator.paginate_queryset(articles, request)
+    serializer = NotionArticleSerializer(paginated_list, many=True)
+
+    return paginator.get_paginated_response(serializer.data)
