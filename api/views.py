@@ -179,8 +179,13 @@ def fetch_article(request, article_id):
             content_body += f'<pre class="prettyprint lang-{code_type}">{code_text}</pre>'
 
         elif result.get('type') == 'quote':
-            quatation_text = result.get('quote').get('rich_text')[0].get('plain_text')
-            content_body += f'<blockquote>{quatation_text}</blockquote>'
+            content_body += f'<blockquote>'
+            for text in result.get('quote').get('rich_text'):
+                if text.get('annotations').get('code'):
+                    content_body += f'<code class="inline--code--block">{text.get("plain_text")}</code>'
+                else:
+                    content_body += text.get('plain_text')
+            content_body += f'</blockquote>'
 
         elif result.get('type') == 'bulleted_list_item':
             content_body += f'<ul><li>'
