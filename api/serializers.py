@@ -1,4 +1,4 @@
-from .models import NotionArticle, Category
+from .models import NotionArticle, Category, Tags
 from rest_framework import serializers
 
 
@@ -14,3 +14,10 @@ class NotionArticleSerializer(serializers.ModelSerializer):
     class Meta:
         model = NotionArticle
         fields = ('id', 'created_time', 'updated_time', 'cover', 'title', 'categories_data', 'views')
+
+
+class TagSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Tags
+        fields = '__all__'

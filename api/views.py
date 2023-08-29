@@ -3,8 +3,8 @@ import requests
 
 from django.http import JsonResponse
 from rest_framework.decorators import api_view
-from .models import NotionArticle, Category
-from .serializers import NotionArticleSerializer
+from .models import NotionArticle, Category, Tags
+from .serializers import NotionArticleSerializer, TagSerializer
 from rest_framework.pagination import PageNumberPagination
 from rest_framework import status
 from datetime import datetime
@@ -46,7 +46,8 @@ def create_article(result):
     for i in range(len(result.get('properties').get('주제').get('multi_select'))):
         category, created = Category.objects.get_or_create(
             category=result.get('properties').get('주제').get('multi_select')[i].get('name'))
-        article.categories.add(category)
+        Tags.objects.create(category=category, notion_article=article)
+
 
 
 @api_view(['GET'])
@@ -87,7 +88,12 @@ class listPagination(PageNumberPagination):
 
 @api_view(['GET'])
 def fetch_published_list(request):
-    articles = NotionArticle.objects.prefetch_related('categories').order_by('-created_time')
+    tag = request.query_params.get('tag')
+    if tag:
+        # like 검색
+        articles = NotionArticle.objects.filter(categories__category__icontains=tag).order_by('-created_time')
+    else:
+        articles = NotionArticle.objects.prefetch_related('categories').order_by('-created_time')
 
     paginator = listPagination()
     paginated_list = paginator.paginate_queryset(articles, request)
@@ -249,3 +255,11 @@ def fetch_by_views(request):
     serializer = NotionArticleSerializer(paginated_list, many=True)
 
     return paginator.get_paginated_response(serializer.data)
+
+
+# @api_view(['GET'])
+def fetch_all_tags(request):
+    tags = Tags.objects.values('category__category').distinct()
+    tag_list = [tag.get('category__category') for tag in tags]
+
+    return JsonResponse(data=tag_list, status=status.HTTP_200_OK, safe=False)

@@ -8,6 +8,7 @@ urlpatterns = [
     path('article/<str:article_id>/', views.fetch_article, name='article'),
     path('category/<str:category>/', views.fetch_by_category, name='category'),
     path('rank/', views.fetch_by_views, name='rank'),
-    # path('comment/<str:article_id>/', views.fetch_comment, name='comment'),
+    path('tags/', views.fetch_all_tags, name='tags'),
+
 
 ]
