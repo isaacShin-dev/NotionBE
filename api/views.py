@@ -4,7 +4,7 @@ import requests
 from django.http import JsonResponse
 from rest_framework.decorators import api_view
 from .models import NotionArticle, Category, Tags
-from .serializers import NotionArticleSerializer, TagSerializer
+from .serializers import NotionArticleSerializer, TagSerializer, CategorySerializer
 from rest_framework.pagination import PageNumberPagination
 from rest_framework import status
 from datetime import datetime
@@ -90,8 +90,8 @@ class listPagination(PageNumberPagination):
 def fetch_published_list(request):
     tag = request.query_params.get('tag')
     if tag:
-        # like 검색
-        articles = NotionArticle.objects.filter(categories__category__icontains=tag).order_by('-created_time')
+        # 태그의 아이디 값을 받아, 해당 태그를 가지고 있는 article 을 가져온다.
+        articles = NotionArticle.objects.filter(categories=tag).order_by('-created_time')
     else:
         articles = NotionArticle.objects.prefetch_related('categories').order_by('-created_time')
 
@@ -259,7 +259,6 @@ def fetch_by_views(request):
 
 # @api_view(['GET'])
 def fetch_all_tags(request):
-    tags = Tags.objects.values('category__category').distinct()
-    tag_list = [tag.get('category__category') for tag in tags]
-
-    return JsonResponse(data=tag_list, status=status.HTTP_200_OK, safe=False)
+    categories = Category.objects.all().distinct()  # id 값이 중복되는 것을 제거, 단일 카테고리만 가져온다.
+    serializer = CategorySerializer(categories, many=True)
+    return JsonResponse(data=serializer.data, status=status.HTTP_200_OK, safe=False)
