@@ -259,6 +259,6 @@ def fetch_by_views(request):
 
 # @api_view(['GET'])
 def fetch_all_tags(request):
-    categories = Category.objects.all().distinct()  # id 값이 중복되는 것을 제거, 단일 카테고리만 가져온다.
+    categories = Category.objects.all().distinct()  # id 값이 중복되는 것을 제거, 단일 카테고리만 가져옴.
     serializer = CategorySerializer(categories, many=True)
     return JsonResponse(data=serializer.data, status=status.HTTP_200_OK, safe=False)
