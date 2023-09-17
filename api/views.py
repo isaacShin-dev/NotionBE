@@ -159,6 +159,8 @@ def fetch_article(request, article_id):
                         tmp = f'<u>{tmp}</u>'
                     if text.get('annotations').get('color'):
                         tmp = f'<span style="color:{text.get("annotations").get("color")}">{tmp}</span>'
+                    if text.get('href'):
+                        tmp = f'<a href="{text.get("href")}">{tmp}</a>'
                     content_body += tmp
 
                 content_body += f'</p>'
@@ -174,7 +176,10 @@ def fetch_article(request, article_id):
                 if text.get('annotations').get('code'):
                     content_body += f'<code class="inline--code--block">{text.get("plain_text")}</code>'
                 else:
-                    content_body += text.get('plain_text')
+                    if text.get('href'):
+                        content_body += f'<a href="{text.get("href")}">{text.get("plain_text")}</a>'
+                    else:
+                        content_body += text.get('plain_text')
             content_body += f'</div>'
 
         elif result.get('type') == 'code':
@@ -190,7 +195,10 @@ def fetch_article(request, article_id):
                 if text.get('annotations').get('code'):
                     content_body += f'<code class="inline--code--block">{text.get("plain_text")}</code>'
                 else:
-                    content_body += text.get('plain_text')
+                    if text.get('href'):
+                        content_body += f'<a href="{text.get("href")}">{text.get("plain_text")}</a>'
+                    else:
+                        content_body += text.get('plain_text')
             content_body += f'</blockquote>'
 
         elif result.get('type') == 'bulleted_list_item':
@@ -199,7 +207,10 @@ def fetch_article(request, article_id):
                 if text.get('annotations').get('code'):
                     content_body += f'<code class="inline--code--block">{text.get("plain_text")}</code>'
                 else:
-                    content_body += text.get('plain_text')
+                    if text.get('href'):
+                        content_body += f'<a href="{text.get("href")}">{text.get("plain_text")}</a>'
+                    else:
+                        content_body += text.get('plain_text')
             content_body += f'</li></ul>'
         elif result.get('type') == 'image':
             image_url = ""
