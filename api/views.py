@@ -323,8 +323,7 @@ def fetch_all_tags(request):
     return JsonResponse(data=serializer.data, status=status.HTTP_200_OK, safe=False)
 
 @api_view(['POST'])
-def delete_article(request):
-    article_id = request.query_params.get('article_id')
+def delete_article(request, article_id):
     article = NotionArticle.objects.get(id=article_id)
     article.delete()
     return JsonResponse(data={'message': 'successfully deleted'}, status=status.HTTP_200_OK)
