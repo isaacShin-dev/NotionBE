@@ -1,6 +1,6 @@
 from django.db import models
 
-
+#  TODO : postgresql로 변경
 class NotionArticle(models.Model):
     id = models.CharField(max_length=100, primary_key=True)
     created_time = models.DateTimeField()
@@ -10,6 +10,7 @@ class NotionArticle(models.Model):
     categories = models.ManyToManyField('Category', related_name='notion_articles', through='Tags')
     views = models.IntegerField(default=0)
     is_published = models.BooleanField(default=False)
+    html_content = models.TextField()
 
 
 class Category(models.Model):

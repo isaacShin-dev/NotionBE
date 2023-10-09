@@ -9,7 +9,7 @@ urlpatterns = [
     path('category/<str:category>/', views.fetch_by_category, name='category'),
     path('rank/', views.fetch_by_views, name='rank'),
     path('tags/', views.fetch_all_tags, name='tags'),
-    path('delete/<str:article_id>/', views.delete_article, name='delete'),
+    # path('delete/<str:article_id>/', views.delete_article, name='delete'),
 
 
 ]

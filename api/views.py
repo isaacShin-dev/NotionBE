@@ -1,6 +1,6 @@
 import json
 import requests
-from bs4 import BeautifulSoup
+
 from django.http import JsonResponse
 from rest_framework.decorators import api_view
 from .models import NotionArticle, Category, Tags
@@ -32,14 +32,23 @@ headers = {
 
 
 def create_article(result):
+    article_id = result.get('id')
+
+    response = requests.get(f'{base_url}blocks/{article_id}/children', headers=headers)
+    res_to_json = json.loads(response.text)
+    results = res_to_json.get('results')
+
+    content_body = content_builder(results)
+
     created_time = datetime.strptime(result.get('created_time'), '%Y-%m-%dT%H:%M:%S.%fZ')
     updated_time = datetime.strptime(result.get('last_edited_time'), '%Y-%m-%dT%H:%M:%S.%fZ')
     article = NotionArticle(
-        id=result.get('id'),
+        id=article_id,
         created_time=created_time,
         updated_time=updated_time,
         cover=result.get('cover').get('external').get('url'),
         title=result.get('properties').get('이름').get('title')[0].get('plain_text'),
+        html_content=content_body
     )
     article.save()
 
@@ -103,28 +112,7 @@ def fetch_published_list(request):
 
 @api_view(['GET'])
 def fetch_article(request, article_id):
-    # check for update
-    update_check_response = requests.get(f'{base_url}pages/{article_id}', headers=headers)
-    update_check_res_to_json = json.loads(update_check_response.text)
-    updated_time = datetime.strptime(update_check_res_to_json.get('last_edited_time'), '%Y-%m-%dT%H:%M:%S.%fZ')
-
     article = NotionArticle.objects.get(id=article_id)
-    if article.updated_time != updated_time:
-        article.updated_time = updated_time
-        article.cover = update_check_res_to_json.get('cover').get('external').get('url')
-        article.title = update_check_res_to_json.get('properties').get('이름').get('title')[0].get('plain_text')
-        article.categories.clear()
-        for i in range(len(update_check_res_to_json.get('properties').get('주제').get('multi_select'))):
-            category, created = Category.objects.get_or_create(
-                category=update_check_res_to_json.get('properties').get('주제').get('multi_select')[i].get('name'))
-            article.categories.add(category)
-        article.save()
-
-    response = requests.get(f'{base_url}blocks/{article_id}/children', headers=headers)
-    res_to_json = json.loads(response.text)
-    results = res_to_json.get('results')
-
-    content_body = build_html_from_notion(results)
 
     article.views += 1
     article.save()
@@ -138,160 +126,107 @@ def fetch_article(request, article_id):
         'cover': article.cover,
         'created_at': article.created_time,
         'views': article.views,
-        'content': content_body
+        'content': article.html_content,
     }
 
     return JsonResponse(data=result, status=status.HTTP_200_OK)
 
 
-def build_html_from_notion(results):
-    html_content = ""
+def process_rich_text_element(text):
+    tmp = text.get('plain_text')
+    if text.get('annotations').get('code'):
+        tmp = f'<code class="inline--code--block">{tmp}</code>'
+    if text.get('annotations').get('bold'):
+        tmp = f'<strong>{tmp}</strong>'
+    if text.get('annotations').get('italic'):
+        tmp = f'<em>{tmp}</em>'
+    if text.get('annotations').get('strikethrough'):
+        tmp = f'<del>{tmp}</del>'
+    if text.get('annotations').get('underline'):
+        tmp = f'<u>{tmp}</u>'
+    if text.get('annotations').get('color'):
+        tmp = f'<span style="color:{text.get("annotations").get("color")}">{tmp}</span>'
+    if text.get('href'):
+        tmp = f'<a href="{text.get("href")}">{tmp}</a>'
+    return tmp
+
+
+def process_rich_text(rich_texts):
+    return ''.join([process_rich_text_element(text) for text in rich_texts])
+
+
+def get_child_content(p_id):
+    res = requests.get(f'{base_url}blocks/{p_id}/children', headers=headers)
+    return content_builder(json.loads(res.text).get('results'))
+
+
+def content_builder(results):
+    content_body = ""
 
     for result in results:
-        block_type = result.get('type')
+        if result.get('type') in ['heading_1', 'heading_2', 'heading_3']:
+            tag = f"h{result.get('type')[-1]}"
+            class_name = "main--header" if tag == 'h1' else ""
+            content_body += f'<{tag} class="{class_name}">{process_rich_text(result.get(result.get("type")).get("rich_text"))}</{tag}>'
+        elif result.get('type') in ['numbered_list_item', 'bulleted_list_item']:
+            tag = 'ol' if result.get('type') == 'numbered_list_item' else 'ul'
+            content_body += f'<{tag}><li>{process_rich_text(result.get(result.get("type")).get("rich_text"))}'
+            if result.get('has_children'):
+                content_body += get_child_content(result.get('id'))
+            content_body += f'</li></{tag}>'
+        elif result.get('type') == 'paragraph':
+            content_body += f'<p>{process_rich_text(result.get("paragraph").get("rich_text"))}'
+            if result.get('has_children'):
+                content_body += get_child_content(result.get('id'))
+            content_body += '</p>'
+        elif result.get('type') == 'divider':
+            content_body += f'<hr>'
 
-        if block_type == 'heading_1':
-            h1_plain_text = result["heading_1"]["rich_text"][0]["plain_text"]
-            html_content += f"<h1 class='main--header'>{h1_plain_text}</h1>"
-        elif block_type == 'heading_2':
-            h2_plain_text = result["heading_2"]["rich_text"][0]["plain_text"]
-            html_content += f"<h2>{h2_plain_text}</h2>"
-        elif block_type == 'heading_3':
-            h3_plain_text = result["heading_3"]["rich_text"][0]["plain_text"]
-            html_content += f"<h3>{h3_plain_text}</h3>"
-        elif block_type == 'numbered_list_item':
-            html_content += '<ol><li>'
-            for text in result["numbered_list_item"]["rich_text"]:
-                html_content += process_text(text)
-            if result.get('has_children'):
-                child_results = get_child_results(result)
-                html_content += build_html_from_notion(child_results)
-            html_content += '</li></ol>'
-        elif block_type == 'paragraph':
-            html_content += '<p>'
-            for text in result["paragraph"]["rich_text"]:
-                html_content += process_text(text)
-            if result.get('has_children'):
-                child_results = get_child_results(result)
-                html_content += build_html_from_notion(child_results)
-            html_content += '</p>'
-        elif block_type == 'divider':
-            html_content += '<hr>'
-        elif block_type == 'callout':
-            html_content += '<div class="callout">'
-            if result['callout'].get('icon'):
-                html_content += result['callout']['icon']['emoji']
-            for text in result["callout"]["rich_text"]:
-                html_content += process_text(text)
-            html_content += '</div>'
-        elif block_type == 'code':
-            code_text = result['code']['rich_text'][0]['plain_text']
-            code_type = result['code']['language'] if result['code'].get('language') else 'text'
+        elif result.get('type') == 'callout':
+            content_body += f'<div class="callout">'
+            if result.get('callout').get('icon'):
+                content_body += f'{result.get("callout").get("icon").get("emoji")}'
+            content_body += process_rich_text(result.get('callout').get('rich_text'))
+            content_body += f'</div>'
+
+        elif result.get('type') == 'code':
+            code_text = process_rich_text(result.get('code').get('rich_text'))
+            code_type = result.get('code').get('language')
             if code_type == 'python':
                 code_type = 'py'
-            html_content += f'<pre class="prettyprint lang-{code_type}">{code_text}</pre>'
-        elif block_type == 'quote':
-            html_content += '<blockquote>'
-            for text in result["quote"]["rich_text"]:
-                html_content += process_text(text)
-            html_content += '</blockquote>'
-        elif block_type == 'bulleted_list_item':
-            html_content += '<ul><li>'
-            for text in result["bulleted_list_item"]["rich_text"]:
-                html_content += process_text(text)
-            if result.get('has_children'):
-                child_results = get_child_results(result)
-                html_content += build_html_from_notion(child_results)
-            html_content += '</li></ul>'
-        elif block_type == 'image':
-            image_url = result.get('image', {}).get('external', {}).get('url') or result.get('image', {}).get('file',
-                                                                                                              {}).get(
-                'url')
-            caption = result['image'].get('caption')
-            image_class = "body--image" if caption else ""
-            text_align = 'style="text-align: center;"' if caption else ""
-            html_content += f'<div {text_align}><img class="{image_class}" src="{image_url}" alt="image"></div>'
+            content_body += f'<pre class="prettyprint lang-{code_type}">{code_text}</pre>'
 
-        elif block_type == 'bookmark':
-            bookmark_url = result['bookmark']['url']
-            html_content += build_bookmark_html(bookmark_url)
-    return html_content
+        elif result.get('type') == 'quote':
+            content_body += f'<blockquote>'
+            content_body += process_rich_text(result.get('quote').get('rich_text'))
+            content_body += f'</blockquote>'
 
+        elif result.get('type') == 'image':
+            image_url = result.get('image').get('external', {}).get('url', '') or result.get('image').get('file',
+                                                                                                          {}).get('url',
+                                                                                                                  '')
+            if result.get('image').get('caption'):
+                content_body += f'<div style="text-align: center;"><v-img max-width="270" class="body--image" src="{image_url}" alt="image"></div>'
+            else:
+                content_body += f'<div><v-img class="body--image img--w90" max-width="270" src="{image_url}" alt="image"></div>'
 
-def get_html(url):
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        return response.text
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching HTML: {e}")
-        return None
+        elif result.get('type') == 'bookmark':
+            bookmark_url = result.get('bookmark').get('url')
+            extract_title = bookmark_url[bookmark_url.find('title='):]
+            bookmark_caption = result.get('bookmark').get('caption')[0].get('plain_text')
+            content_body += f'<a href="{bookmark_url}" target="_blank"><div class="bookmark--wrapper">' \
+                            f'<div class="bookmark--left">' \
+                            f'<img class="bookmark-image" src="/share-banner.png"></img>' \
+                            f'</div>' \
+                            f'<div class="bookmark--title">' \
+                            f'<span class="title--span">{bookmark_caption} | {extract_title}</span>' \
+                            f'<hr/>' \
+                            f'<span class="title--span--subtitle">{bookmark_url}</span>' \
+                            f'</div>' \
+                            f'</div>' \
+                            f'</a>'
 
-
-def extract_meta(url):
-    html = get_html(url)
-    try:
-        soup = BeautifulSoup(html, 'html.parser')
-
-        # 메타 데이터 추출
-        title = soup.find('meta', property='og:title') or soup.find('title')
-        description = soup.find('meta', property='og:description') or soup.find('meta', {'name': 'description'})
-        image = soup.find('meta', property='og:image')
-
-        title_text = title['content'] if title else "No title found"
-        description_text = description['content'] if description else "No description found"
-        image_url = image['content'] if image else "No image found"
-
-        return {
-            'title': title_text,
-            'description': description_text,
-            'image': image_url
-        }
-    except Exception as e:
-        print(f"Error extracting metadata: {e}")
-        return None
-
-
-def build_bookmark_html(url):
-    meta = extract_meta(url)
-    html_content = f"""
-            <div class="bookmark">
-                <a href="{url}" target="_blank">
-                    <div class="bookmark--image" style="background-image: url('{meta['image']}')"></div>
-                    <div class="bookmark--content">
-                        <div class="bookmark--title">{meta['title']}</div>
-                        <div class="bookmark--description">{meta['description']}</div>
-                    </div>
-                </a>
-            </div>
-        """
-    return html_content
-
-
-def process_text(text):
-    plain_text = text['plain_text']
-    annotations = text['annotations']
-    if annotations.get('code'):
-        return f'<code class="inline--code--block">{plain_text}</code>'
-    if annotations.get('bold'):
-        plain_text = f'<strong>{plain_text}</strong>'
-    if annotations.get('italic'):
-        plain_text = f'<em>{plain_text}</em>'
-    if annotations.get('strikethrough'):
-        plain_text = f'<del>{plain_text}</del>'
-    if annotations.get('underline'):
-        plain_text = f'<u>{plain_text}</u>'
-    if annotations.get('color'):
-        plain_text = f'<span style="color:{annotations["color"]}">{plain_text}</span>'
-    if text.get('href'):
-        plain_text = f'<a href="{text["href"]}">{plain_text}</a>'
-    return plain_text
-
-
-def get_child_results(result):
-    p_id = result['id']
-    res = requests.get(f'{base_url}/blocks/{p_id}/children', headers=headers)
-    return json.loads(res.text).get('results')
+    return content_body
 
 
 @api_view(['GET'])
@@ -318,12 +253,6 @@ def fetch_by_views(request):
 
 # @api_view(['GET'])
 def fetch_all_tags(request):
-    categories = Category.objects.all().distinct()  # id 값이 중복되는 것을 제거,
+    categories = Category.objects.all().distinct()[:20]  # id 값이 중복되는 것을 제거,
     serializer = CategorySerializer(categories, many=True)
     return JsonResponse(data=serializer.data, status=status.HTTP_200_OK, safe=False)
-
-@api_view(['POST'])
-def delete_article(request, article_id):
-    article = NotionArticle.objects.get(id=article_id)
-    article.delete()
-    return JsonResponse(data={'message': 'successfully deleted'}, status=status.HTTP_200_OK)
