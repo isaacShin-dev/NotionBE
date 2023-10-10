@@ -175,7 +175,10 @@ def content_builder(results):
                 content_body += get_child_content(result.get('id'))
             content_body += f'</li></{tag}>'
         elif result.get('type') == 'paragraph':
-            content_body += f'<p>{process_rich_text(result.get("paragraph").get("rich_text"))}'
+            if not result.get('paragraph').get('rich_text'):
+                content_body += f'<br>'
+            else:
+                content_body += f'<p>{process_rich_text(result.get("paragraph").get("rich_text"))}'
             if result.get('has_children'):
                 content_body += get_child_content(result.get('id'))
             content_body += '</p>'
@@ -206,9 +209,9 @@ def content_builder(results):
                                                                                                           {}).get('url',
                                                                                                                   '')
             if result.get('image').get('caption'):
-                content_body += f'<div style="text-align: center;"><v-img max-width="270" class="body--image" src="{image_url}" alt="image"></div>'
+                content_body += f'<div style="text-align: center;"><img max-width="270" class="body--image" src="{image_url}" alt="image"></div>'
             else:
-                content_body += f'<div><v-img class="body--image img--w90" max-width="270" src="{image_url}" alt="image"></div>'
+                content_body += f'<div><img class="body--image img--w90" max-width="270" src="{image_url}" alt="image"></div>'
 
         elif result.get('type') == 'bookmark':
             bookmark_url = result.get('bookmark').get('url')
@@ -255,4 +258,11 @@ def fetch_by_views(request):
 def fetch_all_tags(request):
     categories = Category.objects.all().distinct()[:20]  # id 값이 중복되는 것을 제거,
     serializer = CategorySerializer(categories, many=True)
+    return JsonResponse(data=serializer.data, status=status.HTTP_200_OK, safe=False)
+
+
+@api_view(['GET'])
+def related_articles(request, tags):
+    articles = NotionArticle.objects.filter(categories__category=tags).order_by('-created_time')[0:3]
+    serializer = NotionArticleSerializer(articles, many=True)
     return JsonResponse(data=serializer.data, status=status.HTTP_200_OK, safe=False)
