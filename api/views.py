@@ -209,7 +209,10 @@ def content_builder(results):
                                                                                                           {}).get('url',
                                                                                                                   '')
             if result.get('image').get('caption'):
-                content_body += f'<div style="text-align: center;"><img max-width="270" class="body--image" src="{image_url}" alt="image"></div>'
+                if result.get('image').get('caption')[0].get("plain_text") == "img-box-shadow":
+                    content_body += f'<div style="text-align: center;"><img max-width="270" class="body--image img--w90 img--shadow" src="{image_url}" alt="image"></div>'
+                else:
+                    content_body += f'<div style="text-align: center;"><img max-width="270" class="body--image" src="{image_url}" alt="image"></div>'
             else:
                 content_body += f'<div><img class="body--image img--w90" max-width="270" src="{image_url}" alt="image"></div>'
 
