@@ -23,6 +23,3 @@ class Tags(models.Model):
     category = models.ForeignKey(Category, on_delete=models.CASCADE)
     notion_article = models.ForeignKey(NotionArticle, on_delete=models.CASCADE)
 
-
-class Images(models.Model):
-    image = models.ImageField(upload_to=f"blog/post/{id}", blank=True)
