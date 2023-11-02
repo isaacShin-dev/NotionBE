@@ -30,7 +30,8 @@ class NotionArticleParser:
             print(f"An error occurred: {e}")
             return None
 
-    def create_article(self, result, article_id):
+    def create_article(self, article_id):
+        print(article_id)
         response = requests.get(
             f"{self.base_url}blocks/{article_id}/children", headers=self.headers
         )
