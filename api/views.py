@@ -1,21 +1,35 @@
 import os
 from datetime import datetime
-import environ
 from django.http import JsonResponse
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.pagination import PageNumberPagination
 from .models import NotionArticle, Category, Tags
 from .serializers import NotionArticleSerializer, CategorySerializer
-
+from pathlib import Path
 from .utils.articleUtill import NotionArticleParser
 from .utils.common import download_img
+import os, json
+from django.core.exceptions import ImproperlyConfigured
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-env = environ.Env(DEBUG=(bool, True))
-environ.Env.read_env(env_file=os.path.join(BASE_DIR, ".env"))
-api_key = env("API_KEY")
-database_id = env("DATABASE_ID")
+BASE_DIR = Path(__file__).resolve().parent.parent
+secret_file = os.path.join(BASE_DIR, "secrets.json")
+
+with open(secret_file) as file:
+    secrets = json.loads(file.read())
+
+
+def get_secret(setting):
+    try:
+        return secrets[setting]
+    except KeyError:
+        error_msg = "No such key : {} ".format(setting)
+        raise ImproperlyConfigured(error_msg)
+
+
+api_key = get_secret("API_KEY")
+database_id = get_secret("DATABASE_ID")
+
 
 notion_parser = NotionArticleParser(api_key, database_id)
 
